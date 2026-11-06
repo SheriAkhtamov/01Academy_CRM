@@ -89,6 +89,18 @@ describe('copying a demo report', () => {
     expect((screen.getByRole('button', { name: translations.saveAttendance.ru }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it('includes the full names and phone of another manager participant in the report', async () => {
+    mount({ ...demo, canManage: false, participants: [demo.participants[0], {
+      id: 12, studentId: 72, leadId: 102, status: 'attended', managerId: 18, canManage: false,
+      leadName: 'Чужой родитель', contactName: 'Чужой контакт', studentName: 'Чужой ученик', leadPhone: '+998909876543',
+    }] });
+    fireEvent.click(copyButton());
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining(
+      '2. Имя лида: Чужой родитель\nИмя студента: Чужой ученик\nТелефон лида: +998909876543\nПосещение демо: Был на демо',
+    )));
+    expect(mocks.apiRequest).not.toHaveBeenCalled();
+  });
+
   it('reports clipboard failure and allows another attempt', async () => {
     writeText.mockRejectedValueOnce(new Error('Permission denied'));
     mount();

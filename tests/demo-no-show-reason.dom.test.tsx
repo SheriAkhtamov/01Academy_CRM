@@ -113,7 +113,7 @@ describe('demo no-show reason dialog', () => {
     const attendanceSection = screen.getByRole('button', { name: /^Посещение демо$|^Demo attendance$/i });
     fireEvent.click(attendanceSection);
     expect(screen.queryByRole('combobox')).toBeNull();
-    expect(screen.getByRole('status').textContent).toMatch(/Несохранённые изменения|Unsaved changes/i);
+    expect((screen.getByRole('button', { name: /Сохранить посещение|Save demo attendance/i }) as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(attendanceSection);
     expect(screen.getByRole('combobox').textContent).toMatch(/Не пришёл|Did not attend/i);
     fireEvent.click(attendanceSection);

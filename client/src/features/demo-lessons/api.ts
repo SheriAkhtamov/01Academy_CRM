@@ -8,6 +8,7 @@ import type {
   DemoLessonReschedule,
   DemoLessonResourceAvailabilityRequest,
   DemoLessonTeacherChange,
+  DemoParticipantCard,
 } from '@shared/contracts/demo-lessons';
 import { apiRequest } from '@/lib/queryClient';
 import type { VoiceReminderDeliveryStatus, VoiceReminderProgressStatus, VoiceReminderResponse, VoiceReminderRunSummary } from '@shared/contracts/voice-reminders';
@@ -125,6 +126,9 @@ export const teacherDemoLessonsApi = {
 };
 
 export const demoLessonsApi = {
+  participantCard: (demoId: number, participantId: number) => (
+    apiRequest('GET', `/api/academy/demo-lessons/${demoId}/participants/${participantId}/card`) as Promise<DemoParticipantCard>
+  ),
   list: (params: { from: string; to: string; schoolId?: number | null }) => {
     const query = new URLSearchParams({ from: params.from, to: params.to });
     if (params.schoolId) query.set('schoolId', String(params.schoolId));

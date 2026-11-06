@@ -21,6 +21,7 @@ import {
   type DemoNoShowReasonCode,
 } from '@shared/contracts/demo-lessons';
 import { DemoReminderStatus } from '@/features/demo-lessons/ui/DemoReminderStatus';
+import { DemoParticipantCardDialog } from '@/features/demo-lessons/ui/DemoParticipantCardDialog';
 import { EmployeeIdentity } from '@/components/ux/EmployeeIdentity';
 import { CompactModalSection } from '@/components/ux/CompactModalSection';
 import {
@@ -88,6 +89,7 @@ interface DemoLessonDetailsDialogProps {
    * host has nowhere to show a lead, which turns participants back into plain text.
    */
   onOpenLead?: (leadId: number) => void;
+  participantView?: 'lead' | 'demo';
   context?: 'sales' | 'teacher';
 }
 
@@ -104,8 +106,11 @@ export function DemoLessonDetailsDialog({
   onOpenChange,
   onChanged,
   onOpenLead,
+  participantView = 'lead',
   context = 'sales',
 }: DemoLessonDetailsDialogProps) {
+  const [participantCard, setParticipantCard] = useState<{ demoId: number; participantId: number } | null>(null);
+  useEffect(() => { setParticipantCard(null); }, [demo?.id, open]);
   const { t, language } = useTranslation();
   const queryClient = useQueryClient();
   const attendanceApi = context === 'teacher' ? teacherDemoLessonsApi : demoLessonsApi;
@@ -567,21 +572,28 @@ export function DemoLessonDetailsDialog({
             >
               <div className="space-y-1.5">
                 {demo.participants.map((participant) => {
-                  // The server blanks both names on a lead this user may not open,
-                  // so a nameless participant must stay unclickable.
                   const primaryName = participant.studentName || participant.contactName;
                   const secondaryName = participant.studentName && participant.contactName
                     ? participant.contactName
                     : null;
                   const canEditParticipantAttendance = canEditAttendance
                     && participant.canManage !== false;
+                  // An own lead opens its card in the pipeline; anyone else's opens the read-only participant card.
+                  const opensLead = participantView === 'lead' && Boolean(onOpenLead) && Boolean(participant.leadId)
+                    && participant.canManage !== false;
                   return (
                     <div key={participant.id} className="relative grid grid-cols-1 items-center gap-2 rounded-md border border-border-strong bg-background p-2.5 pr-11 sm:grid-cols-[minmax(0,1fr)_11rem_auto] sm:pr-2.5">
-                      {onOpenLead && participant.leadId && primaryName ? (
+                      {context === 'sales' && primaryName && (onOpenLead || participantView === 'demo' || participant.canManage === false) ? (
                         <button
                           type="button"
-                          onClick={() => onOpenLead(Number(participant.leadId))}
-                          aria-label={`${t('openLead')}: ${primaryName}`}
+                          onClick={() => {
+                            if (opensLead) {
+                              onOpenLead?.(Number(participant.leadId));
+                            } else {
+                              setParticipantCard({ demoId: demo.id, participantId: participant.id });
+                            }
+                          }}
+                          aria-label={`${t(opensLead ? 'openLead' : 'demoParticipantCard')}: ${primaryName}`}
                           className="group -m-1 flex min-w-0 items-center gap-2 rounded-md p-1 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           <span className="min-w-0 flex-1">
@@ -756,11 +768,6 @@ export function DemoLessonDetailsDialog({
                     </>
                   ) : null}
                 </div>
-                {canManageScheduledDemo && !canMarkConducted ? (
-                  <p role="status" className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-400">
-                    {!attendanceComplete ? t('demoAttendanceIncomplete') : t('unsavedAttendanceTitle')}
-                  </p>
-                ) : null}
               </CompactModalSection>
             ) : null}
           </div>
@@ -785,6 +792,13 @@ export function DemoLessonDetailsDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {participantCard && open && participantCard.demoId === demo.id ? <DemoParticipantCardDialog
+        demoId={participantCard.demoId}
+        participantId={participantCard.participantId}
+        open
+        onOpenChange={(nextOpen) => { if (!nextOpen) setParticipantCard(null); }}
+      /> : null}
 
       <Dialog open={reasonParticipantId !== null} onOpenChange={(nextOpen) => {
         if (!nextOpen) closeNoShowReason();

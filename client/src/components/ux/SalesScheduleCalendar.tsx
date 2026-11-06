@@ -531,6 +531,7 @@ export function SalesScheduleCalendar({
         schools={schools}
       />
       <DemoLessonDetailsDialog
+        participantView="demo"
         demo={selectedDemo}
         open={Boolean(selectedDemo)}
         onOpenChange={(nextOpen) => {

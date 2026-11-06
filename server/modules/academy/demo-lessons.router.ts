@@ -36,6 +36,7 @@ import { lockDemoParticipantLeads, syncDemoLeadStatuses } from './demo-lead-stat
 import { canManageDemoParticipant, demoAttendanceManagerSql, demoFunnelRoleSql } from './demo-participant-access';
 import { resolveTeacherId } from './academy-analytics';
 import { demoReminderProgressJoinSql } from './demo-reminder-progress';
+import { registerDemoParticipantCardRoutes } from './demo-participant-card.router';
 
 // Explicit 0/1 limits retain the report functions' real cardinality; default
 // set-returning estimates otherwise trigger costly JIT during schedule polling.
@@ -62,10 +63,10 @@ const queryDemoLessons = async (where: string, values: DbValue[]) => query(
             'result', participant.result,
             'noShowReasonCode', participant.no_show_reason_code,
             'noShowReasonNote', participant.no_show_reason_note,
-            'contactName', COALESCE(student.contact_name, lead.contact_name),
+            'contactName', COALESCE(NULLIF(BTRIM(student.contact_name), ''), lead.contact_name),
             'leadName', lead.contact_name,
             'leadPhone', CASE WHEN lead.phone NOT LIKE 'instagram:%' THEN NULLIF(BTRIM(lead.phone), '') END,
-            'studentName', student.student_name,
+            'studentName', COALESCE(NULLIF(BTRIM(student.student_name), ''), lead.student_name),
             'managerId', COALESCE(student.manager_id, lead.manager_id),
             'attendanceManagerId', ${demoAttendanceManagerSql()},
             'funnelRole', ${demoFunnelRoleSql()}
@@ -148,7 +149,7 @@ const presentDemoLesson = (req: any, demo: Row) => {
       const participantCanManage = canManageParticipant(req, participant);
       return participantCanManage
         ? { ...participant, canManage: true }
-        : { ...participant, contactName: null, leadName: null, leadPhone: null, studentName: null, reminderResponse: null, reminderRespondedAt: null, reminderDeliveryStatus: null, reminderDeliveredAt: null, reminderProgressStatus: null, reminderRuns: null, canManage: false };
+        : { ...participant, reminderResponse: null, reminderRespondedAt: null, reminderDeliveryStatus: null, reminderDeliveredAt: null, reminderProgressStatus: null, reminderRuns: null, canManage: false };
     }),
   };
 };
@@ -298,6 +299,7 @@ const assertDemoResources = async (
 };
 
 export const registerAcademyDemoLessonRoutes = (router: ReturnType<typeof Router>) => {
+  registerDemoParticipantCardRoutes(router);
   router.get('/modules/teacher/demo-lessons', async (req, res) => {
     if (!ensureTeacherModuleAccess(req, res)) return;
     try {

@@ -169,3 +169,32 @@ export type LeadDemoParticipant = {
   funnelRole: 'hunter' | 'closer' | null; canManage: boolean;
 };
 export type DemoNotConductedReasonCode = typeof DEMO_NOT_CONDUCTED_REASON_CODES[number];
+
+/** Read-only contact details available only through an actual demo participant. */
+export type DemoParticipantCard = {
+  demoLessonId: number;
+  participantId: number;
+  lead: {
+    id: number;
+    contactName: string;
+    phone: string | null;
+    managerName: string | null;
+    statusName: string | null;
+    sourceName: string | null;
+    courseName: string | null;
+    goal: string | null;
+    urgency: string | null;
+    comment: string | null;
+  } | null;
+  student: {
+    id: number;
+    studentName: string | null;
+    studentAge: number | null;
+    contactName: string;
+    phone: string | null;
+    managerName: string | null;
+    courseName: string | null;
+    schoolName: string | null;
+    groupName: string | null;
+  };
+};

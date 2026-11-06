@@ -1111,7 +1111,7 @@ describe('academy route logic boundaries', () => {
     expect(response.body[0].participants).toEqual(participants.map((participant) => ({ ...participant, canManage: true })));
   });
 
-  it('exposes report contacts only for demo participants the sales manager may manage', async () => {
+  it('shows all demo report contacts without granting management of another manager participant', async () => {
     mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
     const reminderRuns = [{ kind: 'day_before', calls: [{ startedAt: '2026-10-07T09:00:00Z', reason: 'not_connected' }] }];
     mocks.poolQuery.mockImplementation(async (sql: string) => {
@@ -1130,8 +1130,45 @@ describe('academy route logic boundaries', () => {
     expect(response.body[0].canManage).toBe(false);
     expect(response.body[0].participants).toEqual([
       expect.objectContaining({ id: 77, leadName: 'Own lead', leadPhone: '+998901234567', reminderResponse: 'yes', reminderRespondedAt: '2026-10-07T10:00:00Z', reminderProgressStatus: 'played', reminderRuns, canManage: true }),
-      expect.objectContaining({ id: 78, contactName: null, studentName: null, leadName: null, leadPhone: null, reminderResponse: null, reminderRespondedAt: null, reminderDeliveryStatus: null, reminderDeliveredAt: null, reminderProgressStatus: null, reminderRuns: null, canManage: false }),
+      expect.objectContaining({ id: 78, contactName: 'Other contact', studentName: 'Other student', leadName: 'Other lead', leadPhone: '+998909876543', reminderResponse: null, reminderRespondedAt: null, reminderDeliveryStatus: null, reminderDeliveredAt: null, reminderProgressStatus: null, reminderRuns: null, canManage: false }),
     ]);
+  });
+
+  it('opens another manager participant through the demo card without allowing the pipeline lead endpoint', async () => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+    mocks.poolQuery.mockImplementation(async (sql: string, values: unknown[] = []) => {
+      if (sql.includes('participant.id AS participant_id') && sql.includes('AS student')) {
+        expect(sql).toContain('WHERE demo.id = $1 AND participant.id = $2');
+        expect(values).toEqual([23, 78]);
+        return { rows: [{ demo_lesson_id: 23, participant_id: 78,
+          lead: { id: 42, contactName: 'Other parent', managerName: 'Other manager' },
+          student: { id: 156, studentName: 'Other student' } }] };
+      }
+      if (sql.includes('FROM academy_leads l') && sql.includes('WHERE l.id = $1')) {
+        return { rows: [leadFixture({ id: 42, manager_id: 18 })] };
+      }
+      if (sql.includes('FROM academy_students student') && sql.includes('manager.full_name AS manager_name')) {
+        return { rows: [{ id: 156, manager_id: 18, lead_id: 42, student_name: 'Other student' }] };
+      }
+      return emptyResult();
+    });
+    const app = await createApp();
+    const card = await request(app).get('/api/academy/demo-lessons/23/participants/78/card');
+    expect(card.status).toBe(200);
+    expect(card.body).toMatchObject({ demoLessonId: 23, participantId: 78,
+      lead: { id: 42, contactName: 'Other parent' }, student: { studentName: 'Other student' } });
+    expect((await request(app).get('/api/academy/leads/42')).status).toBe(403);
+    expect((await request(app).get('/api/academy/students/156/profile')).status).toBe(403);
+    expect((await request(app).patch('/api/academy/leads/42').send({ contactName: 'overwrite' })).status).toBe(403);
+  });
+
+  it('rejects invalid or unrelated demo participant cards and keeps teacher access denied', async () => {
+    mocks.actor = { id: 7, module: 'sales', modules: ['sales'] };
+    const app = await createApp();
+    expect((await request(app).get('/api/academy/demo-lessons/bad/participants/78/card')).status).toBe(400);
+    expect((await request(app).get('/api/academy/demo-lessons/23/participants/999/card')).status).toBe(404);
+    mocks.actor = { id: 9, module: 'teacher', modules: ['teacher'] };
+    expect((await request(app).get('/api/academy/demo-lessons/23/participants/78/card')).status).toBe(403);
   });
 
   it.each([
@@ -5514,7 +5551,7 @@ describe('academy route logic boundaries', () => {
     expect(response.body.participants).toContainEqual(expect.objectContaining({
       id: 78,
       canManage: false,
-      studentName: null,
+      studentName: 'Other student',
     }));
     const sqls = mocks.clientQuery.mock.calls.map(([sql]) => String(sql));
     expect(sqls.filter((sql) => sql.includes('UPDATE academy_leads SET demo_attended'))).toHaveLength(1);

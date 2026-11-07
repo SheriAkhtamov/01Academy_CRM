@@ -524,8 +524,8 @@ export function FutureGroupsWorkspace() {
           </li>
         </ul>
       ) : null}
-      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <CardContent className="flex min-h-0 flex-1 flex-col p-0">
+      <Card className="min-w-0">
+        <CardContent className="p-0">
           {loading ? (
             <LoadingRegion aria-label={t("loading")} className="space-y-3 p-4">
               {[1, 2, 3].map((i) => (
@@ -563,8 +563,6 @@ export function FutureGroupsWorkspace() {
               data={listedGroups}
               keyExtractor={(group) => `future-group-${group.id}`}
               onRowClick={(group) => setEditing({ group })}
-              rootClassName="flex min-h-0 flex-1 flex-col"
-              className="min-h-0 flex-1 overflow-y-auto"
               showPagination={listedGroups.length > 25}
             />
           )}

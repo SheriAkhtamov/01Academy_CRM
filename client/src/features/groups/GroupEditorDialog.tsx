@@ -144,11 +144,11 @@ export function GroupEditorDialog(props: GroupEditorProps) {
   const teacherConflictLabel = useTeacherConflictLabel()(selectedTeacherConflict);
   const scheduleRef = useRef<HTMLElement>(null);
   const [openSections, setOpenSections] = useState<Record<EditorSectionId, boolean>>({
-    identity: true, place: false, schedule: false, dates: false,
+    identity: true, place: launchingFutureGroup, schedule: launchingFutureGroup, dates: launchingFutureGroup,
   });
   useEffect(() => {
-    if (open) setOpenSections({ identity: true, place: false, schedule: false, dates: false });
-  }, [open, editingGroup?.id]);
+    if (open) setOpenSections({ identity: true, place: launchingFutureGroup, schedule: launchingFutureGroup, dates: launchingFutureGroup });
+  }, [open, editingGroup?.id, launchingFutureGroup]);
   const setSectionOpen = (section: EditorSectionId, expanded: boolean) => {
     setOpenSections((current) => ({ ...current, [section]: expanded }));
   };

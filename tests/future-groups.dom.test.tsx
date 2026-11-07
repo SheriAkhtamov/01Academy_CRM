@@ -170,7 +170,7 @@ it("preserves edited fields after a failed save and requires confirmation to dis
   expect(await screen.findByRole("alertdialog")).toBeTruthy();
 });
 it.each([
-  "futureGroupChanged", "groupCapacityBelowOccupancy", "groupHasInactiveResources",
+  "futureGroupChanged", "groupCapacityBelowOccupancy", "groupCapacityExceedsRoom", "groupHasInactiveResources",
   "teacherNotFound", "groupCodeBranchMissing", "groupCodeCourseMissing", "accessDenied",
 ] as const)("shows the translated reason for %s while retaining the draft", async (code) => {
   // apiRequest localizes message but retains the original server code.
@@ -301,4 +301,23 @@ it("keeps membership actions separate from an unsaved group draft", async () => 
   );
   expect((name as HTMLInputElement).value).toBe("Черновик");
   expect(onClose).not.toHaveBeenCalled();
+});
+it("shows the translated reason when archiving a group with participants fails", async () => {
+  api.archive.mockRejectedValue(
+    Object.assign(Error(i18n.t("futureGroupHasMembers")), {
+      rawMessage: "futureGroupHasMembers",
+    }),
+  );
+  wrap(<FutureGroupsPage />);
+  await screen.findByText(group.name);
+  await userEvent.click(
+    screen.getByRole("button", { name: i18n.t("archiveGroup") }),
+  );
+  const confirmation = await screen.findByRole("alertdialog");
+  await userEvent.click(
+    within(confirmation).getByRole("button", { name: i18n.t("archiveGroup") }),
+  );
+  expect((await within(confirmation).findByRole("alert")).textContent).toBe(
+    i18n.t("futureGroupHasMembers"),
+  );
 });

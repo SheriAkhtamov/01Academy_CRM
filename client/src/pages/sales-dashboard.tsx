@@ -89,6 +89,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import type { LeadTagView } from '@shared/lead-tags';
+import type { StudentProfileStudent } from '@shared/contracts/student-profile';
 import { ACADEMY_TIME_ZONE } from '@/lib/localeFormat';
 import { LoadingRegion } from '@/components/ui/loading-region';
 
@@ -705,6 +706,21 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
     });
   }, [replaceSalesParams]);
 
+  const openStudent = useCallback((studentInput: StudentProfileStudent | number) => {
+    const studentId = typeof studentInput === 'number' ? studentInput : studentInput.id;
+    const existing = myStudents.find((item) => item.id === studentId);
+    const resolved: Student = existing ?? (
+      typeof studentInput === 'number'
+        ? ({ id: studentId, contactName: '', status: 'trial' } as Student)
+        : ({ ...studentInput, status: studentInput.status || 'trial' } as Student)
+    );
+    requestNavigation(() => {
+      setSelectedStudent(resolved);
+      setStudentSheetOpen(true);
+      replaceSalesParams({ student: String(studentId), lead: null }, { push: true });
+    });
+  }, [myStudents, replaceSalesParams]);
+
   const handleLeadSheetState = useCallback((open: boolean) => {
     setLeadSheetOpen(open);
     if (!open) {
@@ -1003,6 +1019,7 @@ export default function SalesDashboard({ section = 'overview' }: { section?: Sal
           schools={data.schools ?? []}
           leads={pipelineLeads}
           onOpenLead={openLead}
+          onOpenStudent={openStudent}
         />
       ) : null}
 

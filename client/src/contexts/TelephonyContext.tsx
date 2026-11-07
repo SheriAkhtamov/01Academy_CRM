@@ -1331,6 +1331,8 @@ export function TelephonyProvider({ children }: { children: ReactNode }) {
   );
 }
 
+export const useOptionalTelephony = () => useContext(TelephonyContext);
+
 export const useTelephony = () => {
   const context = useContext(TelephonyContext);
   if (!context) throw new Error('useTelephony must be used within TelephonyProvider');

@@ -77,6 +77,7 @@ import { cn } from '@/lib/utils';
 import { useTranslation } from '@/hooks/useTranslation';
 import { toast } from '@/hooks/use-toast';
 import type { TranslationKey } from '@/lib/i18n';
+import type { StudentProfileStudent } from '@shared/contracts/student-profile';
 import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface DemoLessonDetailsDialogProps {
@@ -89,6 +90,7 @@ interface DemoLessonDetailsDialogProps {
    * host has nowhere to show a lead, which turns participants back into plain text.
    */
   onOpenLead?: (leadId: number) => void;
+  onOpenStudent?: (student: StudentProfileStudent) => void;
   participantView?: 'lead' | 'demo';
   context?: 'sales' | 'teacher';
 }
@@ -106,6 +108,7 @@ export function DemoLessonDetailsDialog({
   onOpenChange,
   onChanged,
   onOpenLead,
+  onOpenStudent,
   participantView = 'lead',
   context = 'sales',
 }: DemoLessonDetailsDialogProps) {
@@ -798,6 +801,8 @@ export function DemoLessonDetailsDialog({
         participantId={participantCard.participantId}
         open
         onOpenChange={(nextOpen) => { if (!nextOpen) setParticipantCard(null); }}
+        onOpenLead={onOpenLead}
+        onOpenStudent={onOpenStudent}
       /> : null}
 
       <Dialog open={reasonParticipantId !== null} onOpenChange={(nextOpen) => {

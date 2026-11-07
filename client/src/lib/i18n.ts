@@ -2634,6 +2634,7 @@ metaAttributedLeads: { en: 'Attributed leads', ru: 'Лиды из рекламы
   selectSecondLeadForMerge: { en: 'Select the second lead card', ru: 'Выбрать вторую карточку лида' },
   noActivityYet: { en: 'No activity recorded yet.', ru: 'Действий пока не зафиксировано.' },
   openLead: { en: 'Open lead', ru: 'Открыть лида' },
+  openStudent: { en: 'Open student', ru: 'Открыть ученика' },
   paymentDate: { en: 'Payment date', ru: 'Дата оплаты' },
   paymentMethod: { en: 'Payment method', ru: 'Способ оплаты' },
   paymentMethodCard: { en: 'Card', ru: 'Карта' },

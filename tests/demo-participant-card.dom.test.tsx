@@ -7,8 +7,17 @@ import { DemoParticipantCardDialog } from '../client/src/features/demo-lessons/u
 import type { DemoLesson } from '../client/src/features/demo-lessons/api';
 import { i18n } from '../client/src/lib/i18n';
 
-const mocks = vi.hoisted(() => ({ request: vi.fn() }));
+const mocks = vi.hoisted(() => ({ request: vi.fn(), startCall: vi.fn() }));
 vi.mock('../client/src/lib/queryClient', () => ({ apiRequest: mocks.request }));
+vi.mock('../client/src/hooks/useOnlinePbxCall', () => ({
+  useOnlinePbxCall: () => ({
+    startCall: mocks.startCall,
+    isPending: false,
+    pendingPhone: null,
+    isLineBusyWithReminder: false,
+    callButtonLabel: 'Позвонить',
+  }),
+}));
 
 const card = {
   demoLessonId: 23, participantId: 78,
@@ -68,5 +77,48 @@ describe('demo participant card', () => {
     await act(async () => rejectNext(new Error('403: accessDenied')));
     await screen.findByText('Не удалось загрузить данные');
     expect(screen.queryByText('Другой ученик')).toBeNull();
+  });
+
+  it('opens lead and student modals from section buttons and places calls from phone fields', async () => {
+    mocks.request.mockResolvedValueOnce({
+      ...card,
+      student: { ...card.student, phone: '+998971112233' },
+    });
+    const onOpenLead = vi.fn();
+    const onOpenStudent = vi.fn();
+    render(
+      <QueryClientProvider client={client}>
+        <DemoLessonDetailsDialog
+          demo={demo}
+          open
+          participantView="demo"
+          onOpenLead={onOpenLead}
+          onOpenStudent={onOpenStudent}
+          onOpenChange={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Участник демо-урока: Другой ученик' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Участник демо-урока' });
+    await waitFor(() => expect(within(dialog).getByText('+998901234567')).toBeTruthy());
+    expect(within(dialog).getByText('+998971112233')).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Открыть лида' }));
+    expect(onOpenLead).toHaveBeenCalledWith(42);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Открыть ученика' }));
+    expect(onOpenStudent).toHaveBeenCalledWith(expect.objectContaining({
+      id: 156,
+      studentName: 'Другой ученик',
+      contactName: 'Другой родитель',
+      phone: '+998971112233',
+      leadId: 42,
+    }));
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Позвонить: +998901234567' }));
+    expect(mocks.startCall).toHaveBeenCalledWith('+998901234567');
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Позвонить: +998971112233' }));
+    expect(mocks.startCall).toHaveBeenCalledWith('+998971112233');
   });
 });

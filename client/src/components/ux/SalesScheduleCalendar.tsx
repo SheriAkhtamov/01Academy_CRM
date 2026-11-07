@@ -68,6 +68,7 @@ import {
   type SalesScheduleLesson,
   type SalesScheduleSchool,
 } from '@/lib/salesSchedule';
+import type { StudentProfileStudent } from '@shared/contracts/student-profile';
 import { OrbitSpinner } from '@/components/ui/orbit-spinner';
 
 interface SalesScheduleCalendarProps {
@@ -77,6 +78,7 @@ interface SalesScheduleCalendarProps {
   schools: SalesScheduleSchool[];
   leads: DemoLessonDialogLead[];
   onOpenLead?: (leadId: number) => void;
+  onOpenStudent?: (student: StudentProfileStudent) => void;
 }
 
 const VIEWS = CALENDAR_VIEW_MODES;
@@ -104,6 +106,7 @@ export function SalesScheduleCalendar({
   schools,
   leads,
   onOpenLead,
+  onOpenStudent,
 }: SalesScheduleCalendarProps) {
   const { t, language } = useTranslation();
   const locale = language === 'ru' ? ru : enUS;
@@ -538,6 +541,7 @@ export function SalesScheduleCalendar({
           if (!nextOpen) setSelectedDemoId(null);
         }}
         onOpenLead={onOpenLead}
+        onOpenStudent={onOpenStudent}
       />
       <ScheduleEventDialog
         event={selectedEvent}
